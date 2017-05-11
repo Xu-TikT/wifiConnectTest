@@ -1,10 +1,16 @@
 package com.tikt.wificonnecttest;
 
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -33,6 +39,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean search_or_not = true;
 
     private View dialog_view;
+    private String SSID = "SSID";
+    private String ContentSSID = "ContentSSID";//连接上的ssid
+    private MyAdapter adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,16 +49,21 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         wifiList = (ListView) findViewById(R.id.wifi_list);
         init();
-
+        WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        ContentSSID = wifiManager.getConnectionInfo().getSSID().replace("\"", "");
+        SSID = wifiManager.getConnectionInfo().getSSID().replace("\"", "");
+        checknet();
     }
 
 
     private void init() {
+        getListener();
         wifiUtil = new WifiUtil(getApplicationContext());
         wifiUtil.openWifi();
         wifiUtil.startScan();
         scanResultList = wifiUtil.getmWifiList();
-        wifiList.setAdapter(new MyAdapter(this, scanResultList));
+        adapter = new MyAdapter(this, scanResultList);
+        wifiList.setAdapter(adapter);
 
         wifiList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -76,6 +90,8 @@ public class MainActivity extends AppCompatActivity {
 //                    }
 //                }
                 Log.e("search---->", search_or_not + "");
+                SSID = scanResultList.get(i).SSID;
+                Log.w("SSID", "click==" + SSID);
                 showDialog(scanResultList.get(i).SSID);
 
 
@@ -129,8 +145,12 @@ public class MainActivity extends AppCompatActivity {
 
     private void CreateNewConnect(String SSID, String pass) {
         wifiUtil.addNetWork(wifiUtil.createWifiInfo(SSID, pass, pass.length() == 0 ? 1 : 3));
+
     }
 
+    protected void showToast(Context context, String msg) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+    }
 
     public class MyAdapter extends BaseAdapter {
 
@@ -166,18 +186,31 @@ public class MainActivity extends AppCompatActivity {
             TextView textView = (TextView) view.findViewById(R.id.tv_wifi_name);
             textView.setText(scanResult.SSID);
             TextView signalStrenth = (TextView) view.findViewById(R.id.tv_status);
-            signalStrenth.setText(String.valueOf(Math.abs(scanResult.level)));
+            Log.w("scanResult.SSID", scanResult.SSID);
+            if (ContentSSID.equals(scanResult.SSID)) {
+                signalStrenth.setText("已连接");
+            } else {
+                signalStrenth.setText("");
+
+            }
             ImageView imageView = (ImageView) view.findViewById(R.id.im_wifi);
+            int wifiSignalLevel = scanResult.level;
             //判断信号强度，显示对应的指示图标
-            if (Math.abs(scanResult.level) > 100) {
+            //level根据数值可以分为5个等级的信号强弱：
+//            Level>-50           信号最强4格
+//            -50<Level<-65  信号3格
+//            -65<Level<-75  信号2格
+//            -75<Level<-90  信号1格
+//            -90<Level   信号0格
+            if (scanResult.level >= -60) {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_fourth));
-            } else if (Math.abs(scanResult.level) > 80) {
+            } else if (-60 > wifiSignalLevel && wifiSignalLevel >= -65) {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_third));
-            } else if (Math.abs(scanResult.level) > 70) {
+            } else if (-65 > wifiSignalLevel && wifiSignalLevel >= -75) {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_third));
-            } else if (Math.abs(scanResult.level) > 60) {
+            } else if (-75 > wifiSignalLevel && wifiSignalLevel >= -90) {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_second));
-            } else if (Math.abs(scanResult.level) > 50) {
+            } else if (wifiSignalLevel < -90) {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_second));
             } else {
                 imageView.setImageDrawable(getResources().getDrawable(R.mipmap.wifi_first));
@@ -186,4 +219,96 @@ public class MainActivity extends AppCompatActivity {
         }
 
     }
+
+    private void getListener() {
+
+        IntentFilter mFilter = new IntentFilter();
+        mFilter.addAction(WifiManager.RSSI_CHANGED_ACTION); //信号强度变化
+        mFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION); //网络状态变化
+        mFilter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION); //wifi状态，是否连上，密码
+        mFilter.addAction(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION);  //是不是正在获得IP地址
+        mFilter.addAction(WifiManager.NETWORK_IDS_CHANGED_ACTION);
+        mFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);//连上与否
+//        mFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);//连上与否
+        registerReceiver(mBroadcastReceiver, mFilter);
+    }
+
+    private BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION)) {
+                int linkWifiResult = intent.getIntExtra(WifiManager.EXTRA_SUPPLICANT_ERROR, 123);
+                if (linkWifiResult == WifiManager.ERROR_AUTHENTICATING) {
+                    Log.e("TAG", "wifi密码错误广播==" + linkWifiResult);
+                    showToast(MainActivity.this, "密码错误");
+                    wifiUtil.disconnectWifi(wifiUtil.getWcgID());
+                }
+
+                if (intent.getBooleanExtra(WifiManager.EXTRA_SUPPLICANT_CONNECTED, false)) {
+                    Log.w("TAG", "连接成功: ==");
+                }
+                Log.e("Tag", "SUPPLICANT_STATE_CHANGED_ACTION-------->" + action);
+                Log.e("Tag", "SUPPLICANT_STATE_CHANGED_ACTION-------->" + intent.toString());
+            }
+            if (action.equals(WifiManager.WIFI_STATE_CHANGED_ACTION)) {
+
+                Log.e("Tag", "WIFI_STATE_CHANGED_ACTION-------->" + action);
+                Log.e("Tag", "WIFI_STATE_CHANGED_ACTION-------->" + intent.toString());
+                Log.i("TAG", "NETWORK_STATE_CHANGED_ACTION==" + intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, 123));
+                if (intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, 123) == WifiManager.WIFI_STATE_ENABLED) {
+
+                    Log.i("111111>>>>>>>>>>", "成功");
+                } else if (intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, 123) == WifiManager.WIFI_STATE_DISABLED) {
+
+                    Log.i("22222222>>>>>>>>>>", "失败");
+                }
+            }
+            if (WifiManager.NETWORK_STATE_CHANGED_ACTION.equals(intent.getAction())) {
+
+
+                if (checknet()) {
+                    Log.i("111111>>>>>>>>>>", "成功");
+                } else {
+                    Log.i("22222222>>>>>>>>>>", "失败");
+                }
+                Log.e("Tag", "NETWORK_STATE_CHANGED_ACTION-------->" + action);
+                Log.e("Tag", "NETWORK_STATE_CHANGED_ACTION-------->" + intent.toString());
+            }
+            Log.i("Tag", "action-------->" + action);
+            Log.i("Tag", "intent.toString-------->" + intent.toString());
+        }
+    };
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(mBroadcastReceiver);
+    }
+
+    /**
+     * 获取网络
+     */
+    private NetworkInfo networkInfo;
+
+    /**
+     * 监测网络链接
+     *
+     * @return true 链接正常 false 链接断开
+     */
+    private boolean checknet() {
+        ConnectivityManager connManager = (ConnectivityManager) this.getSystemService(CONNECTIVITY_SERVICE);
+        // 获取代表联网状态的NetWorkInfo对象
+        networkInfo = connManager.getActiveNetworkInfo();
+        if (null != networkInfo) {
+            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            Log.w("SSID", wifiManager.getConnectionInfo().getSSID());
+            ContentSSID = wifiManager.getConnectionInfo().getSSID().replace("\"", "");
+            SSID = wifiManager.getConnectionInfo().getSSID().replace("\"", "");
+            adapter.notifyDataSetChanged();
+            return networkInfo.isAvailable();
+        }
+        return false;
+    }
+
 }

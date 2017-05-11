@@ -24,10 +24,19 @@ public class WifiUtil {
 
     private WifiManager.WifiLock mWifiLock;
 
+    public int getWcgID() {
+        return wcgID;
+    }
+
+    public void setWcgID(int wcgID) {
+        this.wcgID = wcgID;
+    }
+
+    private int wcgID = 0;
+
 
     public WifiUtil(Context context) {
         mWifiManager = (WifiManager) context.getSystemService(context.WIFI_SERVICE);
-
         mWifiInfo = mWifiManager.getConnectionInfo();
     }
 
@@ -113,12 +122,14 @@ public class WifiUtil {
     }
 
     public boolean  addNetWork(WifiConfiguration wifiConfiguration) {
-        int wcgID = mWifiManager.addNetwork(wifiConfiguration);
-        Log.e("wcgID", wcgID+"true");
-        mWifiManager.enableNetwork(wcgID, true);
-        mWifiManager.saveConfiguration();
-        mWifiManager.reconnect();
-        return  true;
+         wcgID = mWifiManager.addNetwork(wifiConfiguration);
+        //the ID of the network on success, {@code -1} on failure.
+
+            Log.e("wcgID", wcgID + "true");
+            mWifiManager.enableNetwork(wcgID, true);
+            mWifiManager.saveConfiguration();
+            mWifiManager.reconnect();
+            return true;
 
     }
 
